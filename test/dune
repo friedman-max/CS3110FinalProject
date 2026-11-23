@@ -1,3 +1,3 @@
 (tests
- (names test_knn test_interface)
+ (names test_knn test_interface test_scoring test_game test_classifier)
  (libraries quicksketch ounit2))

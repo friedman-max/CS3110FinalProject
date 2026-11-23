@@ -12,3 +12,8 @@
  (name draw_demo)
  (modules draw_demo)
  (libraries quicksketch))
+
+(executable
+ (name main)
+ (modules main)
+ (libraries quicksketch unix))
