@@ -17,3 +17,8 @@
  (name main)
  (modules main)
  (libraries quicksketch unix))
+
+(executable
+ (name play)
+ (modules play)
+ (libraries quicksketch graphics unix))
