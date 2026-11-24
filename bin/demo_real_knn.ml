@@ -13,42 +13,6 @@ let category_index label =
   in
   find 0
 
-(** [load_data filename] reads tab-separated rows of [split], [category], and
-    784 comma-separated grayscale pixel values. It returns ([training],
-    [testing]) lists of labeled samples, with each pixel normalized from 0..255
-    to 0..1. Raises [Sys_error] if the file cannot be opened; malformed rows,
-    splits, or pixel counts raise [Failure], as do non-numeric pixel strings. *)
-let load_data filename =
-  let input = open_in filename in
-
-  let training = ref [] in
-  let testing = ref [] in
-
-  (try
-     while true do
-       match String.split_on_char '\t' (input_line input) with
-       | [ split; label; pixels ] ->
-           let features =
-             String.split_on_char ',' pixels
-             |> List.map (fun value -> float_of_string value /. 255.)
-             |> Array.of_list
-           in
-
-           if Array.length features <> 784 then failwith "Expected 784 pixels";
-
-           let drawing : Knn.sample = { label; features } in
-
-           if split = "train" then training := drawing :: !training
-           else if split = "test" then testing := drawing :: !testing
-           else failwith "Unknown data split"
-       | _ -> failwith "Invalid data row"
-     done
-   with End_of_file -> ());
-
-  close_in input;
-
-  (List.rev !training, List.rev !testing)
-
 let validate_split ~split ~expected (drawings : Knn.sample list) =
   let counts = Array.make (Array.length categories) 0 in
   List.iter
@@ -87,7 +51,13 @@ let () =
     prerr_endline "Run python3 scripts/prepare_quickdraw.py first";
     exit 1);
 
-  let training, testing = load_data filename in
+  let { Quickdraw_data.training; testing } =
+    match Quickdraw_data.load filename with
+    | Ok dataset -> dataset
+    | Error message ->
+        prerr_endline message;
+        exit 1
+  in
   validate_split ~split:"training" ~expected:100 training;
   validate_split ~split:"test" ~expected:25 testing;
 
