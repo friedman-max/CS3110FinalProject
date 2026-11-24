@@ -1,4 +1,4 @@
 (library
  (name quicksketch)
- (libraries graphics))
+ (libraries graphics unix))
 
