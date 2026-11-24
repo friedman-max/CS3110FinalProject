@@ -20,14 +20,39 @@ let test_manhattan_distance _ =
 (** [test_weighted_vote_prefers_near_label _] checks a nearby class gets the
     largest inverse-distance vote share. *)
 let test_weighted_vote_prefers_near_label _ =
-  let result =
-    Knn_experiments.predict ~k:3 ~metric:Knn_experiments.Euclidean
-      ~voting:Knn_experiments.Inverse_distance ~training [| 0.1; 0. |]
+  let training =
+    [ sample "cat" [| 0.1 |]; sample "tree" [| 0.8 |]; sample "tree" [| 1. |] ]
   in
-  match result with
-  | Ok (best :: _) -> assert_equal "cat" best.label
-  | Ok [] -> assert_failure "expected a ranked prediction"
-  | Error error -> assert_failure (Knn.error_to_string error)
+  let top_label metric voting =
+    match Knn_experiments.predict ~k:3 ~metric ~voting ~training [| 0. |] with
+    | Ok (best :: _) -> best.label
+    | Ok [] -> assert_failure "expected a ranked prediction"
+    | Error error -> assert_failure (Knn.error_to_string error)
+  in
+  List.iter
+    (fun metric ->
+      assert_equal "tree" (top_label metric Knn_experiments.Uniform);
+      assert_equal "cat" (top_label metric Knn_experiments.Inverse_distance))
+    [ Knn_experiments.Euclidean; Knn_experiments.Manhattan ]
+
+let test_invalid_distances _ =
+  List.iter
+    (fun metric ->
+      let predict training query =
+        Knn_experiments.predict ~metric ~voting:Knn_experiments.Uniform
+          ~training query
+      in
+      assert_equal (Error Knn.Empty_vector) (predict training [||]);
+      assert_equal (Error Knn.Non_finite_value)
+        (predict training [| Float.nan; 0. |]);
+      assert_equal (Error Knn.Non_finite_value)
+        (predict [ sample "cat" [| Float.infinity |] ] [| 0. |]);
+      assert_equal (Error (Knn.Dimension_mismatch { expected = 1; actual = 2 }))
+        (predict training [| 0. |]);
+      assert_equal (Error Knn.Non_finite_value)
+        (Knn_experiments.distance metric [| Float.max_float |]
+           [| -.Float.max_float |]))
+    [ Knn_experiments.Euclidean; Knn_experiments.Manhattan ]
 
 (** [test_exact_match_weight _] checks exact matches win inverse-distance voting
     without dividing by zero. *)
@@ -101,6 +126,7 @@ let suite =
   "knn_experiments"
   >::: [
          "manhattan" >:: test_manhattan_distance;
+         "invalid_distances" >:: test_invalid_distances;
          "weighted_vote" >:: test_weighted_vote_prefers_near_label;
          "exact_match" >:: test_exact_match_weight;
          "invalid_k" >:: test_invalid_k;

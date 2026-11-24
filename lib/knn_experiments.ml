@@ -4,55 +4,55 @@ type metric = Euclidean | Manhattan
 type voting = Uniform | Inverse_distance
 type prediction = { label : string; score : float; nearest_distance : float }
 
-(** [is_finite x] is [true] exactly when [x] is neither infinite nor NaN. *)
-let is_finite x =
-  match classify_float x with
-  | FP_nan | FP_infinite -> false
-  | FP_normal | FP_subnormal | FP_zero -> true
+let validate_vector vector =
+  if Array.length vector = 0 then Error Knn.Empty_vector
+  else if Array.for_all Float.is_finite vector then Ok ()
+  else Error Knn.Non_finite_value
 
-(** [distance metric left right] is the distance between two feature vectors, or
-    an error if either vector is empty, non-finite, or has the wrong length. *)
-let distance metric left right =
-  match metric with
-  | Euclidean -> (
-      match Knn.squared_distance left right with
-      | Error _ as error -> error
-      | Ok squared_distance ->
-          let distance = sqrt squared_distance in
-          if is_finite distance then Ok distance else Error Knn.Non_finite_value
-      )
-  | Manhattan ->
-      let expected = Array.length left in
-      let actual = Array.length right in
-      if expected = 0 || actual = 0 then Error Knn.Empty_vector
-      else if expected <> actual then
-        Error (Knn.Dimension_mismatch { expected; actual })
-      else
-        let rec sum_differences index sum =
-          if index = expected then Ok sum
-          else if not (is_finite left.(index) && is_finite right.(index)) then
-            Error Knn.Non_finite_value
-          else
-            let difference = abs_float (left.(index) -. right.(index)) in
-            let sum = sum +. difference in
-            if is_finite difference && is_finite sum then
-              sum_differences (index + 1) sum
-            else Error Knn.Non_finite_value
-        in
-        sum_differences 0 0.
+let squared_euclidean left right =
+  let sum = ref 0. in
+  for i = 0 to Array.length left - 1 do
+    let difference = left.(i) -. right.(i) in
+    sum := !sum +. (difference *. difference)
+  done;
+  !sum
 
-(** [ranking_distance metric left right] is the value used to order neighbors.
-    Squared Euclidean distance preserves Euclidean ranking and avoids computing
-    a square root for every training example. *)
-let ranking_distance metric left right =
-  match metric with
-  | Euclidean -> Knn.squared_distance left right
-  | Manhattan -> distance Manhattan left right
+let manhattan left right =
+  let sum = ref 0. in
+  for i = 0 to Array.length left - 1 do
+    sum := !sum +. abs_float (left.(i) -. right.(i))
+  done;
+  !sum
+
+(* The query is validated once by the caller. Keep Euclidean distances squared
+   until the nearest neighbors are selected. *)
+let ranking_distance metric left =
+  let sum =
+    match metric with Euclidean -> squared_euclidean | Manhattan -> manhattan
+  in
+  let expected = Array.length left in
+  fun right ->
+    match validate_vector right with
+    | Error _ as error -> error
+    | Ok () ->
+        let actual = Array.length right in
+        if actual <> expected then
+          Error (Knn.Dimension_mismatch { expected; actual })
+        else
+          let distance = sum left right in
+          if Float.is_finite distance then Ok distance
+          else Error Knn.Non_finite_value
 
 (** [ordinary_distance metric distance] converts a ranking distance to the
     distance used for reporting and voting. *)
 let ordinary_distance metric distance =
   match metric with Euclidean -> sqrt distance | Manhattan -> distance
+
+let distance metric left right =
+  match validate_vector left with
+  | Error _ as error -> error
+  | Ok () ->
+      Result.map (ordinary_distance metric) (ranking_distance metric left right)
 
 module LabelMap = Map.Make (String)
 
@@ -87,15 +87,21 @@ let compare_predictions first second =
     Returns an error for invalid [k], an empty training set, invalid labels, or
     invalid feature vectors. *)
 let predict ?(k = 3) ~metric ~voting ~training query =
-  if k <= 0 then Error (Knn.Invalid_k k)
-  else if training = [] then Error Knn.Empty_training_set
-  else
+  let valid_query =
+    if k <= 0 then Error (Knn.Invalid_k k)
+    else if training = [] then Error Knn.Empty_training_set
+    else validate_vector query
+  in
+  match valid_query with
+  | Error _ as error -> error
+  | Ok () ->
+    let distance_to_query = ranking_distance metric query in
     let rec calculate_distances acc = function
       | [] -> Ok acc
       | (sample : Knn.sample) :: rest -> (
           if String.trim sample.label = "" then Error Knn.Empty_label
           else
-            match ranking_distance metric query sample.features with
+            match distance_to_query sample.features with
             | Error _ as error -> error
             | Ok distance ->
                 calculate_distances ((distance, sample.label) :: acc) rest)

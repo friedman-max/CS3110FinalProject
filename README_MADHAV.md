@@ -28,7 +28,7 @@ and 105/125 for k=5 with either distance. Inverse-distance voting produced the
 same correct counts as uniform voting on this split. The demo prints per-class
 accuracy and average prediction time for each configuration.
 
-Six OUnit tests cover Manhattan distance, weighted voting, exact-match handling,
-invalid k, baseline compatibility, and evaluation accuracy. Prediction times
-are for comparing configurations on the same machine and are not formal
-benchmarks.
+Seven OUnit tests cover Manhattan distance, invalid distances, weighted voting,
+exact-match handling, invalid k, baseline compatibility, and evaluation
+accuracy. Prediction times are for comparing configurations on the same machine
+and are not formal benchmarks.

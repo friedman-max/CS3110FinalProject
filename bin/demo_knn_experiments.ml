@@ -4,7 +4,6 @@ let categories = [ "cat"; "tree"; "house"; "bicycle"; "airplane" ]
 let dataset_path = "data/quickdraw_demo.tsv"
 let training_per_category = 100
 let testing_per_category = 25
-let pixel_count = 28 * 28
 
 type configuration = {
   name : string;
@@ -13,67 +12,6 @@ type configuration = {
   voting : string;
   predict : float array -> (string, Knn.error) result;
 }
-
-(** [is_finite x] is [true] exactly when [x] is neither infinite nor NaN. *)
-let is_finite x =
-  match classify_float x with
-  | FP_nan | FP_infinite -> false
-  | FP_normal | FP_subnormal | FP_zero -> true
-
-(** [parse_row line_number line] parses one row of the prepared dataset. A row
-    contains a split name, label, and 784 byte-valued pixels. *)
-let parse_row line_number line =
-  let error message =
-    Error (Printf.sprintf "line %d: %s" line_number message)
-  in
-  match String.split_on_char '\t' line with
-  | [ split; label; pixels ] -> (
-      try
-        let bytes =
-          pixels |> String.split_on_char ',' |> List.map float_of_string
-          |> Array.of_list
-        in
-        if Array.length bytes <> pixel_count then error "expected 784 pixels"
-        else if
-          not
-            (Array.for_all
-               (fun pixel -> is_finite pixel && pixel >= 0. && pixel <= 255.)
-               bytes)
-        then error "pixel values must be finite numbers from 0 through 255"
-        else if String.trim label = "" then error "label must not be empty"
-        else
-          let features = Array.map (fun pixel -> pixel /. 255.) bytes in
-          let sample : Knn.sample = { label; features } in
-          match split with
-          | "train" -> Ok (`Training sample)
-          | "test" -> Ok (`Testing sample)
-          | _ -> error "split must be train or test"
-      with Failure _ -> error "pixel values must be numbers")
-  | _ -> error "expected split, label, and pixel values"
-
-(** [load_dataset filename] loads and validates the project's fixed-size
-    training and held-out split from [filename]. *)
-let load_dataset filename =
-  try
-    let input = open_in filename in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr input)
-      (fun () ->
-        let rec read line_number training testing =
-          match input_line input with
-          | exception End_of_file -> Ok (List.rev training, List.rev testing)
-          | line when String.trim line = "" ->
-              read (line_number + 1) training testing
-          | line -> (
-              match parse_row line_number line with
-              | Error _ as error -> error
-              | Ok (`Training sample) ->
-                  read (line_number + 1) (sample :: training) testing
-              | Ok (`Testing sample) ->
-                  read (line_number + 1) training (sample :: testing))
-        in
-        read 1 [] [])
-  with Sys_error message -> Error message
 
 (** [count_label label examples] is the number of [examples] with [label]. *)
 let count_label label examples =
@@ -205,13 +143,13 @@ let print_results results =
     results
 
 let () =
-  match load_dataset dataset_path with
+  match Quickdraw_data.load dataset_path with
   | Error message ->
       prerr_endline message;
       prerr_endline
         "Run python3 scripts/prepare_quickdraw.py to prepare the dataset.";
       exit 1
-  | Ok (training, testing) -> (
+  | Ok { training; testing } -> (
       match
         ( validate_split "training" training_per_category training,
           validate_split "test" testing_per_category testing )
