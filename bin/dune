@@ -9,6 +9,11 @@
  (libraries quicksketch))
 
 (executable
+ (name demo_knn_experiments)
+ (modules demo_knn_experiments)
+ (libraries quicksketch))
+
+(executable
  (name draw_demo)
  (modules draw_demo)
  (libraries quicksketch))
