@@ -1,3 +1,4 @@
 (tests
  (names test_knn test_interface test_scoring test_game test_classifier test_knn_experiments)
+ (names test_knn test_interface test_scoring test_game test_classifier test_quickdraw_data)
  (libraries quicksketch ounit2))

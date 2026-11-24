@@ -1,7 +1,4 @@
-(* Placeholder for the Drawing.t -> 784-float normalization step
-   Returning [||] makes Knn.predict return Error Empty_vector, so a round
-   is scored as a miss instead of crashing. *)
-let features (_ : Drawing.t) : float array = [||]
+let features = Preprocess.features
 
 (* Keep k-NN's ranking and use the vote fraction as the score. An error means
    the classifier could not judge the drawing, so the game gets no guesses. *)

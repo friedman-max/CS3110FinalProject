@@ -54,6 +54,23 @@ val get_drawing : prompt:string -> Drawing.t option
     the player quit (including closing the window). Any stroke in progress
     at submission is finished first. *)
 
+type drawing_result =
+  | Submitted of Drawing.t
+  | Timed_out of Drawing.t
+  | Skipped
+  | Quit
+
+val get_timed_drawing :
+  prompt:(float -> string) ->
+  allow_skip:bool ->
+  time_limit:float ->
+  drawing_result * float
+(** Draw with the usual controls and a deadline in seconds. The prompt receives
+    the displayed seconds remaining, rounded up. [S] skips if [allow_skip] is
+    true. Expiry returns the drawing so far, including any stroke in progress.
+    The second result is the time remaining when input ended. Closing the
+    window returns [Quit]. The limit must be finite and positive. *)
+
 val show_result : target:string -> guesses:string list -> correct:bool -> unit
 (** [show_result ~target ~guesses ~correct] shows the round's outcome in
     the text strip: the target category, the guesses in ranked order (best

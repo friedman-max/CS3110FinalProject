@@ -83,14 +83,39 @@ let guess_tests =
   [
     ( "blank drawing gives no guesses" >:: fun _ ->
       assert_guesses [] (Classifier.guess ~k:3 ~training Drawing.empty) );
-    (* These two check the current placeholder [Classifier.features]. Update
-       them when the normalization step is connected. *)
-    ( "placeholder features is the empty vector" >:: fun _ ->
+    ( "non-blank drawing runs through k-NN" >:: fun _ ->
       let d = Drawing.of_strokes [ [ (10, 10); (20, 20) ] ] in
-      assert_equal 0 (Array.length (Classifier.features d)) );
-    ( "placeholder: non-blank drawing gives no guesses yet" >:: fun _ ->
-      let d = Drawing.of_strokes [ [ (10, 10); (20, 20) ] ] in
-      assert_guesses [] (Classifier.guess ~k:3 ~training d) );
+      let training =
+        [ sample "line" (Preprocess.features d); sample "blank" (Array.make 784 0.) ]
+      in
+      assert_guesses [ ("line", 1.) ] (Classifier.guess ~k:1 ~training d) );
+  ]
+
+let preprocess_tests =
+  [
+    ( "blank is 784 background pixels" >:: fun _ ->
+      assert_equal (Array.make 784 0.) (Preprocess.features Drawing.empty) );
+    ( "single click becomes centered ink" >:: fun _ ->
+      let image = Preprocess.features (Drawing.of_strokes [ [ (0, 279) ] ]) in
+      assert_equal 784 (Array.length image);
+      assert_bool "valid grayscale" (Array.for_all (fun p -> 0. <= p && p <= 1.) image);
+      assert_bool "center has ink" (image.((13 * 28) + 13) > 0.);
+      assert_equal 0. image.(0) );
+    ( "sparse strokes join and the top edge stays on top" >:: fun _ ->
+      let d = Drawing.of_strokes [ [ (30, 30); (30, 230); (230, 230) ] ] in
+      let image = Preprocess.features d in
+      assert_bool "top middle is ink" (image.((2 * 28) + 14) > 0.);
+      assert_equal 0. image.((25 * 28) + 14) );
+    ( "separate strokes keep the gap" >:: fun _ ->
+      let d = Drawing.of_strokes [ [ (30, 100) ]; [ (230, 100) ] ] in
+      let image = Preprocess.features d in
+      assert_bool "left dot" (image.((13 * 28) + 2) > 0.);
+      assert_bool "right dot" (image.((13 * 28) + 25) > 0.);
+      assert_equal 0. image.((13 * 28) + 14) );
+    ( "translation and uniform scale preserve features" >:: fun _ ->
+      let first = Drawing.of_strokes [ [ (20, 20); (60, 60); (20, 60) ] ] in
+      let second = Drawing.of_strokes [ [ (100, 120); (180, 200); (100, 200) ] ] in
+      assert_equal (Preprocess.features first) (Preprocess.features second) );
   ]
 
 let () =
@@ -99,5 +124,6 @@ let () =
     >::: [
            "of_knn" >::: adapter_tests;
            "in the game" >::: game_tests;
+           "preprocessing" >::: preprocess_tests;
            "guess" >::: guess_tests;
          ])

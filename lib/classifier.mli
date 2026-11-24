@@ -10,12 +10,7 @@
 val features : Drawing.t -> float array
 (** [features d] is the feature vector for [d] that {!Knn.predict} compares
     against the training set: 784 floats (28x28 grayscale, 0.0 background, 1.0
-    strokes).
-
-    Placeholder: this currently returns the empty array, so {!Knn.predict}
-    reports [Empty_vector] and {!guess} returns no guesses (scored as a miss)
-    rather than crashing. Once the normalization step is done we can replace the
-    function body's call to it. *)
+    strokes). See {!Preprocess.features}. *)
 
 val of_knn : (Knn.prediction list, Knn.error) result -> (string * float) list
 (** [of_knn r] is the game's guess list for the classifier result [r]:

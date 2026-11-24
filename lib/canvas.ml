@@ -59,38 +59,84 @@ let show_text s =
   displayed_text := s;
   synchronize ()
 
-(* [loop d down] runs the input loop from drawing [d]; [down] records whether
-   the mouse button was held at the previous event, so we can tell a press and a
-   release apart from a drag. *)
-let rec loop d down =
-  let st =
-    wait_next_event [ Button_down; Button_up; Mouse_motion; Key_pressed ]
-  in
-  if st.keypressed then
-    match st.key with
-    | 'c' | 'C' ->
-        render Drawing.empty;
-        loop (Drawing.clear d) false
-    | '\r' | '\n' ->
-        if Drawing.is_empty d then loop d down else Some (Drawing.end_stroke d)
-    | '\027' | 'q' | 'Q' -> None
-    | _ -> loop d down
-  else
-    let p = (st.mouse_x / scale, st.mouse_y / scale) in
-    let d', down' =
-      match (st.button, down) with
-      | true, false -> (Drawing.start_stroke p d, true)
-      | true, true -> (Drawing.add_point p d, true)
-      | false, true -> (Drawing.end_stroke d, false)
-      | false, false -> (d, false)
-    in
-    if d' != d then render d';
-    loop d' down'
+type drawing_result =
+  | Submitted of Drawing.t
+  | Timed_out of Drawing.t
+  | Skipped
+  | Quit
+
+type drawing_event = Input of status | Deadline
+
+let rec loop ~next ~allow_skip d down =
+  let continue = loop ~next ~allow_skip in
+  match next () with
+  | Deadline -> Timed_out (Drawing.end_stroke d)
+  | Input st when st.keypressed -> (
+      match st.key with
+      | 'c' | 'C' ->
+          render Drawing.empty;
+          continue (Drawing.clear d) st.button
+      | '\r' | '\n' ->
+          if Drawing.is_empty d then continue d down
+          else Submitted (Drawing.end_stroke d)
+      | 's' | 'S' when allow_skip -> Skipped
+      | '\027' | 'q' | 'Q' -> Quit
+      | _ -> continue d down)
+  | Input st ->
+      let p = (st.mouse_x / scale, st.mouse_y / scale) in
+      let in_window =
+        0 <= st.mouse_x && st.mouse_x < area_w
+        && 0 <= st.mouse_y && st.mouse_y < area_h + text_height
+      in
+      let d' =
+        match (st.button, down) with
+        | true, false when in_window -> Drawing.start_stroke p d
+        | true, true -> Drawing.add_point p d
+        | false, true -> Drawing.end_stroke d
+        | _ -> d
+      in
+      if d' != d then render d';
+      continue d' st.button
 
 let get_drawing ~prompt =
   show_text prompt;
   render Drawing.empty;
-  try loop Drawing.empty false with Graphic_failure _ -> None
+  let next () =
+    Input (wait_next_event [ Button_down; Button_up; Mouse_motion; Key_pressed ])
+  in
+  try
+    match loop ~next ~allow_skip:false Drawing.empty false with
+    | Submitted drawing -> Some drawing
+    | Timed_out _ | Skipped | Quit -> None
+  with Graphic_failure _ -> None
+
+let get_timed_drawing ~prompt ~allow_skip ~time_limit =
+  if not (Float.is_finite time_limit && time_limit > 0.) then
+    invalid_arg "Canvas.get_timed_drawing: time_limit must be finite and positive";
+  try
+    let shown = ref (ceil time_limit) in
+    show_text (prompt !shown);
+    render Drawing.empty;
+    let deadline = Unix.gettimeofday () +. time_limit in
+    let remaining () = max 0. (min time_limit (deadline -. Unix.gettimeofday ())) in
+    let time_left = ref time_limit in
+    let next () =
+      (* Wait at most one sampling interval so inactivity cannot pause the clock. *)
+      Unix.sleepf (min 0.008 (remaining ()));
+      let st = wait_next_event [ Poll ] in
+      let st = if st.keypressed then { st with key = read_key () } else st in
+      time_left := remaining ();
+      if !time_left = 0. then Deadline
+      else (
+        let seconds = ceil !time_left in
+        if seconds <> !shown then (
+          shown := seconds;
+          show_text (prompt seconds));
+        Input st)
+    in
+    let result = loop ~next ~allow_skip Drawing.empty false in
+    (result, !time_left)
+  with Graphic_failure _ -> (Quit, 0.)
 
 let show_result ~target ~guesses ~correct =
   let verdict = if correct then "Correct!" else "Not quite." in
